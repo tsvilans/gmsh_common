@@ -7,11 +7,11 @@ using namespace System::Runtime::InteropServices;
 using namespace System::Security::Permissions;
 
 [assembly:AssemblyTitleAttribute(L"GmshCommon")];
-[assembly:AssemblyDescriptionAttribute(L"")];
+[assembly:AssemblyDescriptionAttribute(L"A .NET/CLI wrapper for Gmsh (https://gmsh.info).")];
 [assembly:AssemblyConfigurationAttribute(L"")];
-[assembly:AssemblyCompanyAttribute(L"KADK")];
+[assembly:AssemblyCompanyAttribute(L"Tom Svilans")];
 [assembly:AssemblyProductAttribute(L"GmshCommon")];
-[assembly:AssemblyCopyrightAttribute(L"Copyright (c) KADK 2023")];
+[assembly:AssemblyCopyrightAttribute(L"Copyright © Tom Svilans 2023")];
 [assembly:AssemblyTrademarkAttribute(L"")];
 [assembly:AssemblyCultureAttribute(L"")];
 
