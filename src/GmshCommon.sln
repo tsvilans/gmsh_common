@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.1.32414.318
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GmshCommon", "GmshCommon\GmshCommon.vcxproj", "{2089CD1F-E51F-4FE7-9BC0-20D7F22DDF10}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gmsh.GH", "Gmsh.GH\Gmsh.GH.csproj", "{A38DAD71-C6D5-4835-A6FD-8C7F50352532}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2089CD1F-E51F-4FE7-9BC0-20D7F22DDF10}.Debug|x64.ActiveCfg = Debug|x64
+		{2089CD1F-E51F-4FE7-9BC0-20D7F22DDF10}.Debug|x64.Build.0 = Debug|x64
+		{2089CD1F-E51F-4FE7-9BC0-20D7F22DDF10}.Release|x64.ActiveCfg = Release|x64
+		{2089CD1F-E51F-4FE7-9BC0-20D7F22DDF10}.Release|x64.Build.0 = Release|x64
+		{A38DAD71-C6D5-4835-A6FD-8C7F50352532}.Debug|x64.ActiveCfg = Debug|x64
+		{A38DAD71-C6D5-4835-A6FD-8C7F50352532}.Release|x64.ActiveCfg = Release|x64
+		{A38DAD71-C6D5-4835-A6FD-8C7F50352532}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FDE8DA00-9C9B-4255-AC7E-584620AFF366}
+	EndGlobalSection
+EndGlobal
