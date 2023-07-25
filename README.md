@@ -1,3 +1,5 @@
+<img src="img/GmshCommon_example01.png" width=640/>
+
 # GmshCommon
 .NET/CLI wrapper for Gmsh (https://gmsh.info)
 
