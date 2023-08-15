@@ -758,6 +758,103 @@ namespace GmshCommon {
 				return gmsh::model::occ::addPoint(x, y, z, meshSize, tag);
 			}
 
+			static int AddBSpline(array<int>^ pointTags, int tag, int degree, array<double>^ weights, array<double>^ knots, array<int>^ multiplicities)
+			{
+				std::vector<int> pointTags_native(pointTags->Length), multiplicities_native(multiplicities->Length);
+				std::vector<double> weights_native(weights->Length), knots_native(knots->Length);
+
+				Marshal::Copy(pointTags, 0, IntPtr(pointTags_native.data()), pointTags->Length);
+				Marshal::Copy(weights, 0, IntPtr(weights_native.data()), weights->Length);
+				Marshal::Copy(knots, 0, IntPtr(knots_native.data()), knots->Length);
+				Marshal::Copy(multiplicities, 0, IntPtr(multiplicities_native.data()), multiplicities->Length);
+
+
+				return gmsh::model::occ::addBSpline(pointTags_native, tag, degree, weights_native, knots_native, multiplicities_native);
+			}
+
+			static int AddBSpline(array<int>^ pointTags, int tag, int degree, array<double>^ weights)
+			{
+				std::vector<int> pointTags_native(pointTags->Length);
+				std::vector<double> weights_native(weights->Length);
+
+				Marshal::Copy(pointTags, 0, IntPtr(pointTags_native.data()), pointTags->Length);
+				Marshal::Copy(weights, 0, IntPtr(weights_native.data()), weights->Length);
+
+				return gmsh::model::occ::addBSpline(pointTags_native, tag, degree, weights_native);
+			}
+
+
+			static int AddBSplineSurface(
+				array<int>^ pointTags, int numPointsU, 
+				int tag, int degreeU, int degreeV, 
+				array<double>^ weights, 
+				array<double>^ knotsU, array<double>^ knotsV, 
+				array<int>^ multiplicitiesU, array<int>^ multiplicitiesV,
+				array<int>^ wireTags, bool wire3d)
+			{
+				std::vector<int> pointTags_native(pointTags->Length), 
+					multiplicitiesU_native(multiplicitiesU->Length), multiplicitiesV_native(multiplicitiesV->Length),
+					wireTags_native(wireTags->Length);
+				std::vector<double> weights_native(weights->Length), knotsU_native(knotsU->Length), knotsV_native(knotsV->Length);
+
+				Marshal::Copy(pointTags, 0, IntPtr(pointTags_native.data()), pointTags->Length);
+				Marshal::Copy(weights, 0, IntPtr(weights_native.data()), weights->Length);
+				Marshal::Copy(knotsU, 0, IntPtr(knotsU_native.data()), knotsU->Length);
+				Marshal::Copy(knotsV, 0, IntPtr(knotsV_native.data()), knotsV->Length);
+				Marshal::Copy(multiplicitiesU, 0, IntPtr(multiplicitiesU_native.data()), multiplicitiesU->Length);
+				Marshal::Copy(multiplicitiesV, 0, IntPtr(multiplicitiesV_native.data()), multiplicitiesV->Length);
+				Marshal::Copy(wireTags, 0, IntPtr(wireTags_native.data()), wireTags->Length);
+
+				return gmsh::model::occ::addBSplineSurface(pointTags_native, numPointsU, tag, degreeU, degreeV, weights_native, 
+					knotsU_native, knotsV_native, 
+					multiplicitiesU_native, multiplicitiesV_native, 
+					wireTags_native, wire3d);
+
+			}
+
+			static int AddBSplineSurface(
+				array<int>^ pointTags, int numPointsU,
+				int tag, int degreeU, int degreeV,
+				array<double>^ weights,
+				array<int>^ wireTags, bool wire3d)
+			{
+				std::vector<int> pointTags_native(pointTags->Length),
+					wireTags_native(wireTags->Length);
+				std::vector<double> weights_native(weights->Length);
+
+				Marshal::Copy(pointTags, 0, IntPtr(pointTags_native.data()), pointTags->Length);
+				Marshal::Copy(weights, 0, IntPtr(weights_native.data()), weights->Length);
+				Marshal::Copy(wireTags, 0, IntPtr(wireTags_native.data()), wireTags->Length);
+
+				return gmsh::model::occ::addBSplineSurface(pointTags_native, numPointsU, tag, degreeU, degreeV, weights_native,
+					std::vector<double>(), std::vector<double>(),
+					std::vector<int>(), std::vector<int>(),
+					wireTags_native, wire3d);
+			}
+
+			static int AddBSplineSurface(
+				array<int>^ pointTags, int numPointsU,
+				int tag, int degreeU, int degreeV,
+				array<double>^ weights)
+			{
+				std::vector<int> pointTags_native(pointTags->Length);
+				std::vector<double> weights_native(weights->Length);
+
+				Marshal::Copy(pointTags, 0, IntPtr(pointTags_native.data()), pointTags->Length);
+				Marshal::Copy(weights, 0, IntPtr(weights_native.data()), weights->Length);
+
+				return gmsh::model::occ::addBSplineSurface(pointTags_native, numPointsU, tag, degreeU, degreeV, weights_native,
+					std::vector<double>(), std::vector<double>(),
+					std::vector<int>(), std::vector<int>());
+			}
+			static int AddWire(array<int>^ curveTags, int tag, bool checkClosed)
+			{
+				std::vector<int> curveTags_native(curveTags->Length);
+				Marshal::Copy(curveTags, 0, IntPtr(curveTags_native.data()), curveTags->Length);
+
+				return gmsh::model::occ::addWire(curveTags_native, tag, checkClosed);
+			}
+
 			static int AddSurfaceLoop(array<int>^ surfaceTags)
 			{
 				return AddSurfaceLoop(surfaceTags, -1);
