@@ -17,12 +17,12 @@ namespace GmshCommon
         /// Returns a Rhino mesh from Gmsh 2D elements. Gmsh must be initialized beforehand.
         /// </summary>
         /// <returns>A mesh.</returns>
-        public static Mesh GetMesh(int entity = -1)
+        public static Mesh GetMeshOld(int dim = 3, int tag = -1)
         {
             // Get a mesh out
             IntPtr[] nodeTags;
             double[] coords;
-            Gmsh.Mesh.GetNodes(out nodeTags, out coords, 3, -1, true, false);
+            Gmsh.Mesh.GetNodes(out nodeTags, out coords, dim, tag, true, false);
 
             if (nodeTags == null || nodeTags.Length < 1) throw new Exception("Bad nodeTags in GetMesh()");
 
@@ -38,7 +38,7 @@ namespace GmshCommon
             IntPtr[][] elementTags, enodeTags;
 
             
-            Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, -1);
+            Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, tag);
 
             var mesh = new Mesh();
 
@@ -81,6 +81,199 @@ namespace GmshCommon
 
             return mesh;
         }
+
+        public static Mesh GetMesh(int dim = 3, int tag = -1)
+        {
+            return GetMesh(new Pair ( dim, tag ));
+        }
+
+        public static Mesh GetMesh(Pair dimTag)
+        {
+            return GetMesh(new Pair[] { dimTag });
+        }
+
+        public static Mesh GetMesh(Pair[] dimTags)
+        {
+
+            List<Pair> dimTagList = new List<Pair>();
+
+            foreach (var dimTag in dimTags)
+            {
+                if (dimTag.Item1 == 3)
+                {
+                    Pair[] boundaries;
+                    Gmsh.GetBoundary(new Tuple<int, int>[] { dimTag }, out boundaries, true, false, false);
+                    dimTagList.AddRange(boundaries);
+                }
+                else
+                    dimTagList.Add(dimTag);
+            }
+
+            if (dimTagList.Count < 1)
+            {
+                throw new Exception("No valid entities present.");
+            }
+
+            var nodes = new Dictionary<int, Point3d>();
+            var indexMap = new Dictionary<int, int>();
+
+            int totalNodes = 0;
+            foreach (var dimTag in dimTagList)
+            {
+                IntPtr[] nodeTags;
+                double[] coords;
+                Gmsh.Mesh.GetNodes(out nodeTags, out coords, 2, dimTag.Item2, true, false);
+
+                if (nodeTags == null || nodeTags.Length < 1) continue;
+
+                for (int i = 0; i < nodeTags.Length; ++i)
+                {
+                    indexMap[(int)nodeTags[i]] = totalNodes + i;
+                    nodes[totalNodes + i] = new Point3d(
+                      coords[i * 3], coords[i * 3 + 1], coords[i * 3 + 2]);
+                }
+
+                totalNodes += nodeTags.Length;
+            }
+
+            if (totalNodes < 1) throw new Exception("Couldn't get any nodes!");
+
+            var mesh = new Mesh();
+            mesh.Vertices.AddVertices(nodes.Values);
+
+            foreach (var dimTag in dimTagList)
+            {
+                int[] elementTypes;
+                IntPtr[][] elementTags, enodeTags;
+
+                Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, dimTag.Item2);
+
+                for (int i = 0; i < elementTypes.Length; ++i)
+                {
+                    if (elementTypes[i] == 2)
+                    {
+
+                        for (int j = 0; j < enodeTags[i].Length; j += 3)
+                        {
+                            mesh.Faces.AddFace(
+                              indexMap[(int)enodeTags[i][j]],
+                              indexMap[(int)enodeTags[i][j + 1]],
+                              indexMap[(int)enodeTags[i][j + 2]]);
+                        }
+                    }
+                    else if (elementTypes[i] == 3)
+                    {
+
+                        for (int j = 0; j < enodeTags[i].Length; j += 4)
+                        {
+                            mesh.Faces.AddFace(
+                              indexMap[(int)enodeTags[i][j]],
+                              indexMap[(int)enodeTags[i][j + 1]],
+                              indexMap[(int)enodeTags[i][j + 2]],
+                              indexMap[(int)enodeTags[i][j + 3]]);
+                        }
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            mesh.Compact();
+            mesh.RebuildNormals();
+            mesh.Unweld(0.2, true);
+
+            return mesh;
+        }
+
+
+        public static void BrepToGmsh(Brep brep)
+        {
+
+            var verts = new List<int>();
+            var edges = new List<int>();
+            var curves3d = new List<int>();
+            var loops = new List<int>();
+            var surfaces = new List<int>();
+            var faces = new List<int>();
+
+            foreach (BrepVertex vertex in brep.Vertices)
+            {
+                Gmsh.OCC.AddPoint(vertex.Location.X, vertex.Location.Y, vertex.Location.Z, -1);
+            }
+
+            foreach (var edge in brep.Edges)
+            {
+                var crv = edge.EdgeCurve;
+                var bspline = crv.ToNurbsCurve();
+                var pointTags = new List<int>();
+                var weights = new List<double>();
+
+                foreach (ControlPoint cpt in bspline.Points)
+                {
+
+                    pointTags.Add(Gmsh.OCC.AddPoint(cpt.X, cpt.Y, cpt.Z));
+                    weights.Add(cpt.Weight);
+                }
+                curves3d.Add(Gmsh.OCC.AddBSpline(pointTags.ToArray(), -1, crv.Degree, weights.ToArray()));
+            }
+
+            foreach (Surface srf in brep.Surfaces)
+            {
+                var bsrf = srf.ToNurbsSurface();
+                var pointTags = new List<int>();
+                var weights = new List<double>();
+
+                foreach (ControlPoint cpt in bsrf.Points)
+                {
+                    pointTags.Add(Gmsh.OCC.AddPoint(cpt.X, cpt.Y, cpt.Z));
+                    weights.Add(cpt.Weight);
+                }
+
+                surfaces.Add(Gmsh.OCC.AddBSplineSurface(pointTags.ToArray(), bsrf.Points.CountV, -1, bsrf.Degree(1), bsrf.Degree(0),
+                  weights.ToArray()));
+            }
+
+
+            foreach (BrepFace face in brep.Faces)
+            {
+                var wires = new List<int>();
+
+                foreach (BrepLoop loop in face.Loops)
+                {
+                    var wire = new List<int>();
+
+                    foreach (BrepTrim trim in loop.Trims)
+                    {
+                        wire.Add(curves3d[trim.Edge.EdgeCurveIndex]);
+                    }
+
+                    wires.Add(Gmsh.OCC.AddWire(wire.ToArray(), -1, true));
+                }
+
+                faces.Add(Gmsh.OCC.AddTrimmedSurface(surfaces[face.SurfaceIndex], wires.ToArray()));
+
+                Gmsh.OCC.Synchronize();
+
+            }
+
+            Gmsh.OCC.Remove(surfaces.Select(x => new Pair(2, x)).ToArray(), true);
+            Gmsh.OCC.Remove(curves3d.Select(x => new Pair(1, x)).ToArray(), true);
+            Gmsh.OCC.Remove(verts.Select(x => new Pair(0, x)).ToArray(), true);
+
+            var faceLoop = Gmsh.OCC.AddSurfaceLoop(faces.ToArray(), -1);
+
+            if (brep.IsSolid)
+            {
+                var volume = Gmsh.OCC.AddVolume(new int[] { faceLoop });
+
+            }
+
+            Gmsh.OCC.Synchronize();
+
+        }
+
 
         /// <summary>
         /// Get mesh for specific physical group.

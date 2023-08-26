@@ -589,6 +589,26 @@ namespace GmshCommon {
 
 				return gmsh::model::geo::addSurfaceLoop(nSurfaceTags, tag);
 			}
+
+			static array<System::Tuple<int, int>^>^ GetBoundary(int dim, array<System::Tuple<int, int>^>^ tags)
+			{
+				gmsh::vectorpair dimTags(tags->Length);
+				for (int i = 0; i < tags->Length; ++i)
+				{
+					dimTags[i] = std::pair<int, int>(tags[i]->Item1, tags[i]->Item2);
+				}
+
+				gmsh::vectorpair outDimTags;
+				gmsh::model::getBoundary(dimTags, outDimTags, true, true, false);
+
+				array<System::Tuple<int, int>^>^ output = gcnew array<System::Tuple<int, int>^> (outDimTags.size());
+				for (int i = 0; i < outDimTags.size(); ++i)
+				{
+					output[i] = gcnew System::Tuple<int, int>(outDimTags[i].first, outDimTags[i].second);
+				}
+
+				return output;
+			}
 		};
 
 		ref class OCC
@@ -768,7 +788,6 @@ namespace GmshCommon {
 				Marshal::Copy(knots, 0, IntPtr(knots_native.data()), knots->Length);
 				Marshal::Copy(multiplicities, 0, IntPtr(multiplicities_native.data()), multiplicities->Length);
 
-
 				return gmsh::model::occ::addBSpline(pointTags_native, tag, degree, weights_native, knots_native, multiplicities_native);
 			}
 
@@ -780,7 +799,26 @@ namespace GmshCommon {
 				Marshal::Copy(pointTags, 0, IntPtr(pointTags_native.data()), pointTags->Length);
 				Marshal::Copy(weights, 0, IntPtr(weights_native.data()), weights->Length);
 
+
 				return gmsh::model::occ::addBSpline(pointTags_native, tag, degree, weights_native);
+			}
+
+			static int AddTrimmedSurface(int surfaceTag, array<int>^ wireTags, bool wire3D, int tag)
+			{
+				std::vector<int> wireTags_native(wireTags->Length);
+				Marshal::Copy(wireTags, 0, IntPtr(wireTags_native.data()), wireTags->Length);
+
+				return gmsh::model::occ::addTrimmedSurface(surfaceTag, wireTags_native, wire3D, tag);
+			}
+
+			static int AddTrimmedSurface(int surfaceTag, array<int>^ wireTags, bool wire3D)
+			{
+				return AddTrimmedSurface(surfaceTag, wireTags, wire3D, -1);
+			}
+
+			static int AddTrimmedSurface(int surfaceTag, array<int>^ wireTags)
+			{
+				return AddTrimmedSurface(surfaceTag, wireTags, true, -1);
 			}
 
 
@@ -810,6 +848,19 @@ namespace GmshCommon {
 					multiplicitiesU_native, multiplicitiesV_native, 
 					wireTags_native, wire3d);
 
+			}
+
+			static int AddPlaneSurface(array<int>^ wireTags)
+			{
+				return AddPlaneSurface(wireTags, -1);
+			}
+
+			static int AddPlaneSurface(array<int>^ wireTags, int tag)
+			{
+				std::vector<int> wireTags_native(wireTags->Length);
+				Marshal::Copy(wireTags, 0, IntPtr(wireTags_native.data()), wireTags->Length);
+
+				return gmsh::model::occ::addPlaneSurface(wireTags_native, tag);
 			}
 
 			static int AddBSplineSurface(
@@ -847,6 +898,58 @@ namespace GmshCommon {
 					std::vector<double>(), std::vector<double>(),
 					std::vector<int>(), std::vector<int>());
 			}
+
+			static int AddCone(double x, double y, double z, double dx, double dy, double dz, double r1, double r2, int tag, double angle)
+			{
+				return gmsh::model::occ::addCone(x, y, z, dx, dy, dz, r1, r2, tag, angle);
+			}
+
+			static int AddCone(double x, double y, double z, double dx, double dy, double dz, double r1, double r2)
+			{
+				return gmsh::model::occ::addCone(x, y, z, dx, dy, dz, r1, r2, -1);
+			}
+
+			static int AddCircle(double x, double y, double z, double r, int tag, double angle1, double angle2, array<double>^ zAxis, array<double>^ xAxis)
+			{
+				if (zAxis->Length != 3 || xAxis->Length != 3) throw gcnew System::Exception("Axes need to be length 3.");
+
+				std::vector<double> zAxis_native(3), xAxis_native(3);
+				Marshal::Copy(zAxis, 0, IntPtr(zAxis_native.data()), zAxis->Length);
+				Marshal::Copy(xAxis, 0, IntPtr(xAxis_native.data()), xAxis->Length);
+
+				return gmsh::model::occ::addCircle(x, y, z, r, tag, angle1, angle2, zAxis_native, xAxis_native);
+			}
+
+			static int AddCircle(double x, double y, double z, double r, int tag, double angle1, double angle2, array<double>^ zAxis)
+			{
+				if (zAxis->Length != 3) throw gcnew System::Exception("Axes need to be length 3.");
+
+				std::vector<double> zAxis_native(3);
+				Marshal::Copy(zAxis, 0, IntPtr(zAxis_native.data()), zAxis->Length);
+
+				return gmsh::model::occ::addCircle(x, y, z, r, tag, angle1, angle2, zAxis_native);
+			}
+
+			static int AddCircle(double x, double y, double z, double r)
+			{
+				return gmsh::model::occ::addCircle(x, y, z, r);
+			}
+
+			static array < System::Tuple<int, int>^>^ Extrude(array<double>^ dimTags, double dx, double dy, double dz)
+			{
+				gmsh::vectorpair dimTags_native(dimTags->Length), outDimTags_native;
+				Marshal::Copy(dimTags, 0, IntPtr(dimTags_native.data()), dimTags->Length);
+
+				gmsh::model::occ::extrude(dimTags_native, dx, dy, dz, outDimTags_native);
+
+				array < System::Tuple<int, int>^>^ outDimTags = gcnew array < System::Tuple<int, int>^>(outDimTags_native.size());
+
+				for (int i = 0; i < outDimTags_native.size(); ++i)
+					outDimTags[i] = gcnew System::Tuple<int, int>(outDimTags_native[i].first, outDimTags_native[i].second);
+
+				return outDimTags;
+			}
+
 			static int AddWire(array<int>^ curveTags, int tag, bool checkClosed)
 			{
 				std::vector<int> curveTags_native(curveTags->Length);
