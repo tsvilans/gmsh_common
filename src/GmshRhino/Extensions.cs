@@ -5,9 +5,11 @@ using System.Text;
 using System.Threading.Tasks;
 
 using Rhino.Geometry;
-using Grasshopper.Kernel.Types;
 
 using Pair = System.Tuple<int, int>;
+using Rhino.Geometry.Collections;
+using System.Runtime.Remoting.Metadata.W3cXsd2001;
+using Rhino;
 
 namespace GmshCommon
 {
@@ -22,7 +24,7 @@ namespace GmshCommon
             // Get a mesh out
             IntPtr[] nodeTags;
             double[] coords;
-            Gmsh.Mesh.GetNodes(out nodeTags, out coords, dim, tag, true, false);
+            Gmsh.Model.Mesh.GetNodes(out nodeTags, out coords, dim, tag, true, false);
 
             if (nodeTags == null || nodeTags.Length < 1) throw new Exception("Bad nodeTags in GetMesh()");
 
@@ -37,8 +39,8 @@ namespace GmshCommon
             int[] elementTypes;
             IntPtr[][] elementTags, enodeTags;
 
-            
-            Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, tag);
+
+            Gmsh.Model.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, tag);
 
             var mesh = new Mesh();
 
@@ -84,7 +86,7 @@ namespace GmshCommon
 
         public static Mesh GetMesh(int dim = 3, int tag = -1)
         {
-            return GetMesh(new Pair ( dim, tag ));
+            return GetMesh(new Pair(dim, tag));
         }
 
         public static Mesh GetMesh(Pair dimTag)
@@ -102,7 +104,7 @@ namespace GmshCommon
                 if (dimTag.Item1 == 3)
                 {
                     Pair[] boundaries;
-                    Gmsh.GetBoundary(new Tuple<int, int>[] { dimTag }, out boundaries, true, false, false);
+                    Gmsh.Model.GetBoundary(new Tuple<int, int>[] { dimTag }, out boundaries, true, false, false);
                     dimTagList.AddRange(boundaries);
                 }
                 else
@@ -122,7 +124,7 @@ namespace GmshCommon
             {
                 IntPtr[] nodeTags;
                 double[] coords;
-                Gmsh.Mesh.GetNodes(out nodeTags, out coords, 2, dimTag.Item2, true, false);
+                Gmsh.Model.Mesh.GetNodes(out nodeTags, out coords, 2, dimTag.Item2, true, false);
 
                 if (nodeTags == null || nodeTags.Length < 1) continue;
 
@@ -146,7 +148,7 @@ namespace GmshCommon
                 int[] elementTypes;
                 IntPtr[][] elementTags, enodeTags;
 
-                Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, dimTag.Item2);
+                Gmsh.Model.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 2, dimTag.Item2);
 
                 for (int i = 0; i < elementTypes.Length; ++i)
                 {
@@ -187,54 +189,212 @@ namespace GmshCommon
             return mesh;
         }
 
-
-        public static void BrepToGmsh(Brep brep)
+        public static void KnotsToOCC(IEnumerable<double> knotsOriginal, int degree, out double[] knotsOcc, out int[] multsOcc)
         {
+            var knotList = knotsOriginal.ToList();
 
+            double lastKnot = knotList[0];
+            double currentKnot = knotList[1];
+            int mult = 1;
+
+            var knots = new List<double>();
+            var mults = new List<int>();
+
+            var epsilon = 1e-6;
+
+            for (int i = 1; i < knotList.Count; ++i)
+            {
+                currentKnot = knotList[i];
+                if (Math.Abs(lastKnot - currentKnot) > epsilon)
+                {
+                    knots.Add(lastKnot);
+                    mults.Add(mult);
+
+                    mult = 1;
+                    lastKnot = currentKnot;
+                }
+                else
+                {
+                    mult++;
+                }
+            }
+
+            knots.Add(currentKnot);
+            mults.Add(mult);
+
+            mults[0] = degree + 1;
+            mults[mults.Count - 1] = degree + 1;
+
+            knotsOcc = knots.ToArray();
+            multsOcc = mults.ToArray();
+        }
+        /*
+        public static void KnotsToOCC(NurbsCurveKnotList knotsOriginal, int degree, out double[] knotsOcc, out int[] multsOcc)
+        {
+            double lastKnot = knotsOriginal[0];
+            double currentKnot = knotsOriginal[1];
+            int mult = 1;
+
+            var knots = new List<double>();
+            var mults = new List<int>();
+
+            var epsilon = 1e-6;
+
+            for (int i = 1; i < knotsOriginal.Count; ++i)
+            {
+                currentKnot = knotsOriginal[i];
+                if (Math.Abs(lastKnot - currentKnot) > epsilon)
+                {
+                    knots.Add(lastKnot);
+                    mults.Add(mult);
+
+                    mult = 1;
+                    lastKnot = currentKnot;
+                }
+                else
+                {
+                    mult++;
+                }
+            }
+
+            knots.Add(currentKnot);
+            mults.Add(mult);
+
+            mults[0] = degree + 1;
+            mults[mults.Count - 1] = degree + 1;
+
+            knotsOcc = knots.ToArray();
+            multsOcc = mults.ToArray();
+        }
+        */
+
+        public static int AddBSpline(NurbsCurve bspline)
+        {
+            var pointTags = new List<int>();
+            var weights = new List<double>();
+
+            int start = 0;
+            int end = bspline.Points.Count;
+
+            if (bspline.IsPeriodic)
+            {
+                //start = bspline.Degree - 1;
+                end = bspline.Points.Count - bspline.Degree;
+            }
+
+            for (int i = start; i < end; ++i)
+            {
+                var cpt = bspline.Points[i];
+
+                pointTags.Add(Gmsh.Model.OCC.AddPoint(cpt.Location.X, cpt.Location.Y, cpt.Location.Z));
+                weights.Add(cpt.Weight);
+            }
+
+            if (bspline.IsClosed)
+            {
+                //pointTags[pointTags.Count - 1] = pointTags[0];
+            }
+
+
+            double[] knots; int[] multiplicities;
+            KnotsToOCC(bspline.Knots, bspline.Degree, out knots, out multiplicities);
+
+            return Gmsh.Model.OCC.AddBSpline(pointTags.ToArray(), -1, bspline.Degree, weights.ToArray(), knots, multiplicities);
+        }
+
+        public static int AddBSplineSurface(Surface srf)
+        {
+            var pts = new List<Point3d>();
+
+            var bsrf = srf.ToNurbsSurface();
+
+            var pointTags = new List<int>();
+            var weights = new List<double>();
+
+            for (int v = 0; v < bsrf.Points.CountV; ++v)
+            {
+                for (int u = 0; u < bsrf.Points.CountU; ++u)
+                {
+                    ControlPoint cpt = bsrf.Points.GetControlPoint(u, v);
+
+                    var cptLoc = cpt.Location;
+
+                    var pTag = Gmsh.Model.OCC.AddPoint(cptLoc.X, cptLoc.Y, cptLoc.Z);
+                    pointTags.Add(pTag);
+
+                    Gmsh.Model.OCC.Synchronize();
+                    weights.Add(cpt.Weight);
+                    pts.Add(cpt.Location);
+                }
+            }
+
+            if (bsrf.IsClosed(0))
+            {
+                for (int i = 0; i < bsrf.Points.CountV; ++i)
+                {
+                    //pointTags[i * bsrf.Points.CountU] = pointTags[(i + 1) * bsrf.Points.CountU - 1];
+                }
+            }
+
+            if (bsrf.IsClosed(1))
+            {
+                for (int i = 0; i < bsrf.Points.CountU; ++i)
+                {
+                    //pointTags[i * bsrf.Points.CountV] = pointTags[(i + 1) * bsrf.Points.CountV - 1];
+                }
+            }
+
+            double[] knotsU, knotsV;
+            int[] multsU, multsV;
+
+            KnotsToOCC(bsrf.KnotsU, bsrf.Degree(0), out knotsU, out multsU);
+            KnotsToOCC(bsrf.KnotsV, bsrf.Degree(1), out knotsV, out multsV);
+
+            return Gmsh.Model.OCC.AddBSplineSurface(pointTags.ToArray(), bsrf.Points.CountU, -1, bsrf.Degree(0), bsrf.Degree(1),
+              weights.ToArray(), knotsU, knotsV, multsU, multsV);
+        }
+
+        public static int AddBrep(Brep brep, bool heal = true)
+        {
+            List<int> faces = new List<int>();
+            return AddBrep(brep, faces, heal);
+        }
+
+
+        public static int AddBrep(Brep brep, List<int> faces, bool heal = true)
+        {
             var verts = new List<int>();
             var edges = new List<int>();
             var curves3d = new List<int>();
             var loops = new List<int>();
+            var trims = new List<int>();
             var surfaces = new List<int>();
-            var faces = new List<int>();
+            //var faces = new List<int>();
 
             foreach (BrepVertex vertex in brep.Vertices)
             {
-                Gmsh.OCC.AddPoint(vertex.Location.X, vertex.Location.Y, vertex.Location.Z, -1);
+                //Gmsh.OCC.AddPoint(vertex.Location.X, vertex.Location.Y, vertex.Location.Z, -1);
             }
 
             foreach (var edge in brep.Edges)
             {
                 var crv = edge.EdgeCurve;
                 var bspline = crv.ToNurbsCurve();
-                var pointTags = new List<int>();
-                var weights = new List<double>();
+                curves3d.Add(AddBSpline(bspline));
+            }
 
-                foreach (ControlPoint cpt in bspline.Points)
-                {
-
-                    pointTags.Add(Gmsh.OCC.AddPoint(cpt.X, cpt.Y, cpt.Z));
-                    weights.Add(cpt.Weight);
-                }
-                curves3d.Add(Gmsh.OCC.AddBSpline(pointTags.ToArray(), -1, crv.Degree, weights.ToArray()));
+            foreach (BrepTrim trim in brep.Trims)
+            {
+                var crv = trim.TrimCurve;
+                var bspline = crv.ToNurbsCurve();
+                trims.Add(AddBSpline(bspline));
             }
 
             foreach (Surface srf in brep.Surfaces)
             {
-                var bsrf = srf.ToNurbsSurface();
-                var pointTags = new List<int>();
-                var weights = new List<double>();
-
-                foreach (ControlPoint cpt in bsrf.Points)
-                {
-                    pointTags.Add(Gmsh.OCC.AddPoint(cpt.X, cpt.Y, cpt.Z));
-                    weights.Add(cpt.Weight);
-                }
-
-                surfaces.Add(Gmsh.OCC.AddBSplineSurface(pointTags.ToArray(), bsrf.Points.CountV, -1, bsrf.Degree(1), bsrf.Degree(0),
-                  weights.ToArray()));
+                surfaces.Add(AddBSplineSurface(srf));
+                Gmsh.Model.OCC.Synchronize();
             }
-
 
             foreach (BrepFace face in brep.Faces)
             {
@@ -243,37 +403,80 @@ namespace GmshCommon
                 foreach (BrepLoop loop in face.Loops)
                 {
                     var wire = new List<int>();
+                    var test = new List<int>();
 
                     foreach (BrepTrim trim in loop.Trims)
                     {
-                        wire.Add(curves3d[trim.Edge.EdgeCurveIndex]);
+
+                        //wire.Add(trims[trim.TrimIndex]);
+                        //wire.Add(curves3d[trim.Edge.EdgeCurveIndex]);
+                        //test.Add(trim.Edge.EdgeCurveIndex);
+
+                        if (brep.Surfaces[face.SurfaceIndex] is PlaneSurface && false)
+                        {
+                            wire.Add(AddBSpline(trim.Edge.ToNurbsCurve()));
+                        }
+                        else
+                        {
+                            wire.Add(AddBSpline(trim.ToNurbsCurve()));
+                        }
                     }
 
-                    wires.Add(Gmsh.OCC.AddWire(wire.ToArray(), -1, true));
+                    var wireTag = Gmsh.Model.OCC.AddWire(wire.ToArray(), -1, true);
+
+                    wires.Add(wireTag);
                 }
 
-                faces.Add(Gmsh.OCC.AddTrimmedSurface(surfaces[face.SurfaceIndex], wires.ToArray()));
+                if (brep.Surfaces[face.SurfaceIndex] is NurbsSurface || true)
+                {
+                    faces.Add(Gmsh.Model.OCC.AddTrimmedSurface(surfaces[face.SurfaceIndex], wires.ToArray(), false));
+                    //faces.Add(surfaces[face.SurfaceIndex]);
+                }
+                else if (brep.Surfaces[face.SurfaceIndex] is PlaneSurface)
+                {
+                    faces.Add(Gmsh.Model.OCC.AddPlaneSurface(wires.ToArray()));
+                }
 
-                Gmsh.OCC.Synchronize();
-
+                Gmsh.Model.OCC.Synchronize();
             }
 
-            Gmsh.OCC.Remove(surfaces.Select(x => new Pair(2, x)).ToArray(), true);
-            Gmsh.OCC.Remove(curves3d.Select(x => new Pair(1, x)).ToArray(), true);
-            Gmsh.OCC.Remove(verts.Select(x => new Pair(0, x)).ToArray(), true);
+            Gmsh.Model.OCC.Remove(surfaces.Select(x => new Pair(2, x)).ToArray(), true);
+            Gmsh.Model.OCC.Synchronize();
 
-            var faceLoop = Gmsh.OCC.AddSurfaceLoop(faces.ToArray(), -1);
+            Gmsh.Model.OCC.Remove(curves3d.Select(x => new Pair(1, x)).ToArray(), true);
+            Gmsh.Model.OCC.Synchronize();
+
+            Gmsh.Model.OCC.Remove(verts.Select(x => new Pair(0, x)).ToArray(), true);
+            Gmsh.Model.OCC.Synchronize();
+
+            var faceLoop = Gmsh.Model.OCC.AddSurfaceLoop(faces.ToArray());
+
+            int volume = -1;
 
             if (brep.IsSolid)
             {
-                var volume = Gmsh.OCC.AddVolume(new int[] { faceLoop });
+                volume = Gmsh.Model.OCC.AddVolume(new int[] { faceLoop });
+                Gmsh.Model.OCC.Synchronize();
 
             }
+            //RhinoApp.WriteLine("Volume tag: {0}", volume);
 
-            Gmsh.OCC.Synchronize();
+            if (heal)
+            {
+                Pair[] outDimTags;
+                Pair[] dimTags = new Pair[] { new Pair(3, volume) };
 
+                // HealShapes returns alllll the shapes in the model, even if dimTags is populated...
+                Gmsh.Model.OCC.HealShapes(out outDimTags, dimTags, 1e-06, true, true, true, true, true);
+
+                // So assigning the result is meaningless. We assume that the tag doesn't change.
+                //volume = outDimTags[0].Item2;
+            }
+
+            Gmsh.Model.OCC.Synchronize();
+
+            return volume;
         }
-
 
         /// <summary>
         /// Get mesh for specific physical group.
@@ -285,7 +488,7 @@ namespace GmshCommon
         {
             IntPtr[] nodeTags;
             double[] coords;
-            Gmsh.Mesh.GetNodes(out nodeTags, out coords, 3, -1, true, false);
+            Gmsh.Model.Mesh.GetNodes(out nodeTags, out coords, 3, -1, true, false);
 
             var nodes = new Point3d[nodeTags.Length + 1];
 
@@ -298,14 +501,14 @@ namespace GmshCommon
             int[] elementTypes;
             IntPtr[][] elementTags, enodeTags;
 
-            var entities = Gmsh.GetEntitiesForPhysicalGroup(dim, tag);
+            var entities = Gmsh.Model.GetEntitiesForPhysicalGroup(dim, tag);
 
             var mesh = new Mesh();
             mesh.Vertices.AddVertices(nodes);
 
             foreach (int ent in entities)
             {
-                Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, dim, ent);
+                Gmsh.Model.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, dim, ent);
 
                 for (int i = 0; i < elementTypes.Length; ++i)
                 {
@@ -353,7 +556,7 @@ namespace GmshCommon
         /// <param name="create_geometry">Sometimes the reconstruction of geometry fails, in which case this settings needs to be toggled.</param>
         public static int TransferMesh(Mesh mesh, bool create_geometry = false)
         {
-            var entity = Gmsh.AddDiscreteEntity(2, -1);
+            var entity = Gmsh.Model.AddDiscreteEntity(2, -1);
 
             mesh = mesh.DuplicateMesh();
             mesh.Weld(Math.PI);
@@ -374,7 +577,7 @@ namespace GmshCommon
                 coords[i * 3 + 2] = mesh.Vertices[i].Z;
             }
 
-            Gmsh.Mesh.AddNodes(2, entity, tags, coords);
+            Gmsh.Model.Mesh.AddNodes(2, entity, tags, coords);
 
             var faces3 = new IntPtr[mesh.Faces.TriangleCount];
             var faces4 = new IntPtr[mesh.Faces.QuadCount];
@@ -424,15 +627,15 @@ namespace GmshCommon
                 nodeTags.Add(faceindices4);
             }
 
-            Gmsh.Mesh.AddElements(2, entity, elementTypes.ToArray(),
+            Gmsh.Model.Mesh.AddElements(2, entity, elementTypes.ToArray(),
               elementTags.ToArray(),
               nodeTags.ToArray());
 
-            Gmsh.Mesh.CreateTopology(true, true);
-            Gmsh.Mesh.ClassifySurfaces(0.1, true, true, 0.1, true);
+            Gmsh.Model.Mesh.CreateTopology(true, true);
+            Gmsh.Model.Mesh.ClassifySurfaces(0.1, true, true, 0.1, true);
 
             if (create_geometry)
-                Gmsh.Mesh.CreateGeometry();
+                Gmsh.Model.Mesh.CreateGeometry();
 
             return entity;
         }
@@ -444,7 +647,7 @@ namespace GmshCommon
             {
                 int[] elementTypes;
                 IntPtr[][] elementTags, enodeTags;
-                Gmsh.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 3, -1);
+                Gmsh.Model.Mesh.GetElements(out elementTypes, out elementTags, out enodeTags, 3, -1);
 
                 for (int i = 0; i < elementTypes.Length; ++i)
                 {
@@ -485,14 +688,14 @@ namespace GmshCommon
 
             Array.Sort(dimTags); // Important for putting the lower dimension entities before higher ones
 
-            Gmsh.SetNumber("Geometry.OCCBooleanPreserveNumbering", 1);
+            Gmsh.Option.SetNumber("Geometry.OCCBooleanPreserveNumbering", 1);
 
             var obj = new Pair[] { dimTags[0] };
             var tools = new Pair[dimTags.Length - 1];
             Array.Copy(dimTags, 1, tools, 0, tools.Length);
 
-            Gmsh.OCC.Fragment(obj, tools, out dimTagsOut, out dimTagsMap, true, true);
-            Gmsh.OCC.Synchronize();
+            Gmsh.Model.OCC.Fragment(obj, tools, out dimTagsOut, out dimTagsMap, true, true);
+            Gmsh.Model.OCC.Synchronize();
 
 
             var all = new Tuple<int, int>[obj.Length + tools.Length];

@@ -10,7 +10,7 @@
     <ProjectGuid>{A38DAD71-C6D5-4835-A6FD-8C7F50352532}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Gmsh.GH</RootNamespace>
+    <RootNamespace>GmshCommon.GH</RootNamespace>
     <AssemblyName>Gmsh.GH</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -64,13 +64,22 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Cmpt_Mesh2D.cs" />
+    <Compile Include="Cmpt_Tetrahedralize.cs" />
+    <Compile Include="Cmpt_Triangulate.cs" />
+    <Compile Include="CompareIntArray.cs" />
+    <Compile Include="Extensions.cs" />
+    <Compile Include="HashBucket.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Utility.cs" />
+    <Compile Include="Tetra.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\GmshCommon\GmshCommon.vcxproj">
       <Project>{2089cd1f-e51f-4fe7-9bc0-20d7f22ddf10}</Project>
       <Name>GmshCommon</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\GmshRhino\GmshRhino.csproj">
+      <Project>{f43039f6-9788-45ae-bc62-790893513006}</Project>
+      <Name>GmshRhino</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

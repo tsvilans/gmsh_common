@@ -107,28 +107,28 @@ namespace GmshCommon.GH
 
             // Get 2D entities (the mesh we just transferred)
              Tuple<int, int>[] surfaceTags;
-             Gmsh.GetEntities(out surfaceTags, 2);
+             Gmsh.Model.GetEntities(out surfaceTags, 2);
             //Message = String.Format("{0} : {1}", mesh_id, surfaceTags[0].Item2);
 
-            var loop = Gmsh.Geo.AddSurfaceLoop(surfaceTags.Select(x => x.Item2).ToArray());
+            var loop = Gmsh.Model.Geo.AddSurfaceLoop(surfaceTags.Select(x => x.Item2).ToArray());
             
             //var loop = Gmsh.Geo.AddSurfaceLoop(new int[] { mesh_id });
-            var vol = Gmsh.Geo.AddVolume(new int[] { loop });
+            var vol = Gmsh.Model.Geo.AddVolume(new int[] { loop });
 
-            Gmsh.Geo.Synchronize();
+            Gmsh.Model.Geo.Synchronize();
 
             // Set mesh sizes
             int element_order = 1;
-            Gmsh.SetNumber("Mesh.MeshSizeMin", size_min);
-            Gmsh.SetNumber("Mesh.MeshSizeMax", size_max);
+            Gmsh.Option.SetNumber("Mesh.MeshSizeMin", size_min);
+            Gmsh.Option.SetNumber("Mesh.MeshSizeMax", size_max);
 
-            Gmsh.SetNumber("Mesh.SaveAll", 0);
-            Gmsh.SetNumber("Mesh.SaveGroupsOfElements", -1001);
-            Gmsh.SetNumber("Mesh.SaveGroupsOfNodes", 2);
-            Gmsh.SetNumber("Mesh.ElementOrder", element_order);
+            Gmsh.Option.SetNumber("Mesh.SaveAll", 0);
+            Gmsh.Option.SetNumber("Mesh.SaveGroupsOfElements", -1001);
+            Gmsh.Option.SetNumber("Mesh.SaveGroupsOfNodes", 2);
+            Gmsh.Option.SetNumber("Mesh.ElementOrder", element_order);
 
             // Generate mesh
-            Gmsh.Generate(3);
+            Gmsh.Model.Generate(3);
 
             mesh = GmshCommon.GeometryExtensions.GetMesh();
 
