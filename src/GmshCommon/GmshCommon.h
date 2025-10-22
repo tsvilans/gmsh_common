@@ -552,7 +552,7 @@ namespace GmshCommon {
 					Marshal::Copy(coords, 0, IntPtr(nCoords.data()), coords->Length);
 
 					std::vector<size_t> nTris;
-					gmsh::model::mesh::triangulate(nCoords, nTris);
+					gmsh::algorithm::triangulate(nCoords, nTris);
 
 					array<IntPtr>^ tris = gcnew array<IntPtr>(nTris.size());
 					Marshal::Copy(IntPtr(nTris.data()), tris, 0, nTris.size());
@@ -568,7 +568,8 @@ namespace GmshCommon {
 					Marshal::Copy(coords, 0, IntPtr(nCoords.data()), coords->Length);
 
 					std::vector<size_t> nTetra;
-					gmsh::model::mesh::tetrahedralize(nCoords, nTetra);
+
+					gmsh::algorithm::tetrahedralize(nCoords, nTetra);
 
 					array<IntPtr>^ tetra = gcnew array<IntPtr>(nTetra.size());
 					Marshal::Copy(IntPtr(nTetra.data()), tetra, 0, nTetra.size());

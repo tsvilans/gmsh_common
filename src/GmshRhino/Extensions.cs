@@ -8,7 +8,7 @@ using Rhino.Geometry;
 
 using Pair = System.Tuple<int, int>;
 using Rhino.Geometry.Collections;
-using System.Runtime.Remoting.Metadata.W3cXsd2001;
+//using System.Runtime.Remoting.Metadata.W3cXsd2001;
 using Rhino;
 
 namespace GmshCommon
