@@ -107,6 +107,21 @@ namespace GmshCommon {
 				return gcnew System::String(name.c_str());
 			}
 
+			static void Remove()
+			{
+				gmsh::model::remove();
+			}
+
+			static array<System::String^>^ List()
+			{
+				std::vector<std::string> names;
+				gmsh::model::list(names);
+				array<System::String^>^ result = gcnew array<System::String^>((int)names.size());
+				for (size_t i = 0; i < names.size(); ++i)
+					result[i] = gcnew System::String(names[i].c_str());
+				return result;
+			}
+
 			static void Generate(int dim)
 			{
 				gmsh::model::mesh::generate(dim);
@@ -410,6 +425,45 @@ namespace GmshCommon {
 						Marshal::Copy(IntPtr(nodeTags_native.data()), nodeTags, 0, nodeTags_native.size());
 				}
 
+				static void GetElementByCoordinates(double x, double y, double z,
+					[System::Runtime::InteropServices::Out] IntPtr% elementTag,
+					[System::Runtime::InteropServices::Out] int% elementType,
+					[System::Runtime::InteropServices::Out] array<IntPtr>^% nodeTags,
+					[System::Runtime::InteropServices::Out] double% u,
+					[System::Runtime::InteropServices::Out] double% v,
+					[System::Runtime::InteropServices::Out] double% w,
+					int dim, System::Boolean strict)
+				{
+					size_t eTag_native;
+					int eType_native;
+					std::vector<size_t> nodeTags_native;
+					double u_native, v_native, w_native;
+
+					gmsh::model::mesh::getElementByCoordinates(x, y, z, eTag_native, eType_native,
+						nodeTags_native, u_native, v_native, w_native, dim, strict);
+
+					elementTag = IntPtr((long long)eTag_native);
+					elementType = eType_native;
+					u = u_native;
+					v = v_native;
+					w = w_native;
+
+					nodeTags = gcnew array<IntPtr>(nodeTags_native.size());
+					if (nodeTags_native.size() > 0)
+						Marshal::Copy(IntPtr(nodeTags_native.data()), nodeTags, 0, nodeTags_native.size());
+				}
+
+				static void GetElementByCoordinates(double x, double y, double z,
+					[System::Runtime::InteropServices::Out] IntPtr% elementTag,
+					[System::Runtime::InteropServices::Out] int% elementType,
+					[System::Runtime::InteropServices::Out] array<IntPtr>^% nodeTags,
+					[System::Runtime::InteropServices::Out] double% u,
+					[System::Runtime::InteropServices::Out] double% v,
+					[System::Runtime::InteropServices::Out] double% w)
+				{
+					GetElementByCoordinates(x, y, z, elementTag, elementType, nodeTags, u, v, w, -1, false);
+				}
+
 				static System::String^ GetElementProperties(
 					int elementType,
 					[System::Runtime::InteropServices::Out] int% dim, [System::Runtime::InteropServices::Out] int% order,
@@ -568,8 +622,19 @@ namespace GmshCommon {
 					Marshal::Copy(coords, 0, IntPtr(nCoords.data()), coords->Length);
 
 					std::vector<size_t> nTetra;
+					std::vector<double> nSteiner;
 
-					gmsh::algorithm::tetrahedralize(nCoords, nTetra);
+					gmsh::algorithm::tetrahedralize(nCoords, nTetra, nSteiner);
+
+					// Steiner points, if any, are extra points gmsh had to insert that aren't
+					// part of the caller's original point list - their coordinates are
+					// returned in nSteiner, but nothing above passes them back to the caller.
+					// A tetrahedron referencing one would silently read a bogus index into the
+					// caller's own point array instead, so fail loudly rather than let that
+					// happen quietly. This shouldn't occur for the unconstrained case used
+					// here (no `triangles' argument), but check anyway.
+					if (!nSteiner.empty())
+						throw gcnew System::Exception("Tetrahedralize() added Steiner points, which this wrapper does not yet support returning.");
 
 					array<IntPtr>^ tetra = gcnew array<IntPtr>(nTetra.size());
 					Marshal::Copy(IntPtr(nTetra.data()), tetra, 0, nTetra.size());
@@ -577,10 +642,40 @@ namespace GmshCommon {
 					return tetra;
 				}
 
-				static void GetLocalCoordinatesInElement(int tag, double x, double y, double z, 
-					[System::Runtime::InteropServices::Out] double u, [System::Runtime::InteropServices::Out] double v, [System::Runtime::InteropServices::Out] double w)
+				static void GetLocalCoordinatesInElement(int tag, double x, double y, double z,
+					[System::Runtime::InteropServices::Out] double% u, [System::Runtime::InteropServices::Out] double% v, [System::Runtime::InteropServices::Out] double% w)
 				{
-					gmsh::model::mesh::getLocalCoordinatesInElement(tag, x, y, z, u, v, w);
+					double u_native, v_native, w_native;
+
+					gmsh::model::mesh::getLocalCoordinatesInElement(tag, x, y, z, u_native, v_native, w_native);
+
+					u = u_native;
+					v = v_native;
+					w = w_native;
+				}
+
+				static void GetBasisFunctions(int elementType, array<double>^ localCoord, System::String^ functionSpaceType,
+					[System::Runtime::InteropServices::Out] int% numComponents,
+					[System::Runtime::InteropServices::Out] array<double>^% basisFunctions,
+					[System::Runtime::InteropServices::Out] int% numOrientations)
+				{
+					std::vector<double> localCoord_native(localCoord->Length);
+					if (localCoord->Length > 0)
+						Marshal::Copy(localCoord, 0, IntPtr(localCoord_native.data()), localCoord->Length);
+
+					int numComponents_native, numOrientations_native;
+					std::vector<double> basisFunctions_native;
+
+					gmsh::model::mesh::getBasisFunctions(elementType, localCoord_native,
+						msclr::interop::marshal_as<std::string>(functionSpaceType),
+						numComponents_native, basisFunctions_native, numOrientations_native);
+
+					numComponents = numComponents_native;
+					numOrientations = numOrientations_native;
+
+					basisFunctions = gcnew array<double>(basisFunctions_native.size());
+					if (basisFunctions_native.size() > 0)
+						Marshal::Copy(IntPtr(basisFunctions_native.data()), basisFunctions, 0, basisFunctions_native.size());
 				}
 
 				static array<double>^ GetBarycenters(int elementType, int tag, bool fast, bool primary, int task, int numTasks)

@@ -36,6 +36,9 @@ namespace GmshCommon.GH
 
     public class Cmpt_Mesh2D : GH_Component
     {
+        // A private, per-instance Gmsh model - see Cmpt_Tetrahedralize for the reasoning.
+        private readonly string _modelName = "Gmsh.GH_Mesh2D_" + Guid.NewGuid().ToString("N");
+
         public Cmpt_Mesh2D()
             : base("Gmsh2D", "Gmsh2D",
                 "Mesh 2D entities.",
@@ -63,10 +66,15 @@ namespace GmshCommon.GH
             pManager.AddPointParameter("Node Positions", "NP", "Node positions.", GH_ParamAccess.list);
             pManager.AddIntegerParameter("Element IDs", "EI", "Element IDs.", GH_ParamAccess.list);
             pManager.AddIntegerParameter("Element Nodes", "EN", "Element node IDs.", GH_ParamAccess.tree);
+            pManager.AddTextParameter("Model", "G", "Name of this component's Gmsh model, for use with the Query component.", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            // Always report this component's model name, even if we return early below -
+            // it's stable for the component's lifetime regardless of whether it has solved.
+            DA.SetData("Model", _modelName);
+
             double size_min = 10.0, size_max = 100.0;
             bool create_geometry = false;
 
@@ -80,66 +88,83 @@ namespace GmshCommon.GH
 
             if (mesh == null) return;
 
-            Gmsh.InitializeGmsh();
-            Gmsh.Clear();
-            Gmsh.Logger.Start();
-
-            var mesh_id = -1;
-
-            // Add mesh data
-            try
+            // Fresh model every solve: this component rebuilds its geometry from the input
+            // mesh each time, so any previous version of this component's own model is
+            // removed and a clean one is created. Other components' models are untouched,
+            // and this is safe even if they're using Gmsh at the same time - see GmshSession.
+            using (GmshSession.UseFreshModel(_modelName))
             {
-                mesh_id = GmshCommon.GeometryExtensions.TransferMesh(mesh, create_geometry);
+                Gmsh.Logger.Start();
+                try
+                {
+                    var mesh_id = -1;
+
+                    // Add mesh data
+                    try
+                    {
+                        mesh_id = GmshCommon.GeometryExtensions.TransferMesh(mesh, create_geometry);
+                    }
+                    catch (Exception e)
+                    {
+                        string msg = Gmsh.Logger.GetLastError();
+
+                        var log = Gmsh.Logger.Get();
+                        foreach (string l in log)
+                            msg += String.Format("\n    {0}", log);
+
+                        throw new Exception(msg);
+                    }
+
+                    if (mesh_id < 0) return;
+
+
+                    // Get 2D entities (the mesh we just transferred)
+                    Tuple<int, int>[] surfaceTags;
+                    Gmsh.Model.GetEntities(out surfaceTags, 2);
+                    //Message = String.Format("{0} : {1}", mesh_id, surfaceTags[0].Item2);
+
+                    var loop = Gmsh.Model.Geo.AddSurfaceLoop(surfaceTags.Select(x => x.Item2).ToArray());
+
+                    //var loop = Gmsh.Geo.AddSurfaceLoop(new int[] { mesh_id });
+                    var vol = Gmsh.Model.Geo.AddVolume(new int[] { loop });
+
+                    Gmsh.Model.Geo.Synchronize();
+
+                    // Set mesh sizes
+                    int element_order = 1;
+                    Gmsh.Option.SetNumber("Mesh.MeshSizeMin", size_min);
+                    Gmsh.Option.SetNumber("Mesh.MeshSizeMax", size_max);
+
+                    Gmsh.Option.SetNumber("Mesh.SaveAll", 0);
+                    Gmsh.Option.SetNumber("Mesh.SaveGroupsOfElements", -1001);
+                    Gmsh.Option.SetNumber("Mesh.SaveGroupsOfNodes", 2);
+                    Gmsh.Option.SetNumber("Mesh.ElementOrder", element_order);
+
+                    // Generate mesh
+                    Gmsh.Model.Generate(3);
+
+                    mesh = GmshCommon.GeometryExtensions.GetMesh();
+
+                    mesh.Compact();
+                    List<Mesh> meshes = new List<Mesh>();
+
+                    meshes.Add(mesh);
+
+                    DA.SetDataList(0, meshes);
+                }
+                finally
+                {
+                    // Balance Start() ourselves: we no longer FinalizeGmsh() every solve, so
+                    // nothing else resets the logger for us between now and the next solve.
+                    Gmsh.Logger.Stop();
+                }
             }
-            catch (Exception e)
-            {
-                string msg = Gmsh.Logger.GetLastError();
+        }
 
-                var log = Gmsh.Logger.Get();
-                foreach (string l in log)
-                    msg += String.Format("\n    {0}", log);
-
-                throw new Exception(msg);
-            }
-
-            if (mesh_id < 0) return;
-
-
-            // Get 2D entities (the mesh we just transferred)
-             Tuple<int, int>[] surfaceTags;
-             Gmsh.Model.GetEntities(out surfaceTags, 2);
-            //Message = String.Format("{0} : {1}", mesh_id, surfaceTags[0].Item2);
-
-            var loop = Gmsh.Model.Geo.AddSurfaceLoop(surfaceTags.Select(x => x.Item2).ToArray());
-            
-            //var loop = Gmsh.Geo.AddSurfaceLoop(new int[] { mesh_id });
-            var vol = Gmsh.Model.Geo.AddVolume(new int[] { loop });
-
-            Gmsh.Model.Geo.Synchronize();
-
-            // Set mesh sizes
-            int element_order = 1;
-            Gmsh.Option.SetNumber("Mesh.MeshSizeMin", size_min);
-            Gmsh.Option.SetNumber("Mesh.MeshSizeMax", size_max);
-
-            Gmsh.Option.SetNumber("Mesh.SaveAll", 0);
-            Gmsh.Option.SetNumber("Mesh.SaveGroupsOfElements", -1001);
-            Gmsh.Option.SetNumber("Mesh.SaveGroupsOfNodes", 2);
-            Gmsh.Option.SetNumber("Mesh.ElementOrder", element_order);
-
-            // Generate mesh
-            Gmsh.Model.Generate(3);
-
-            mesh = GmshCommon.GeometryExtensions.GetMesh();
-
-            mesh.Compact();
-            List<Mesh> meshes = new List<Mesh>();
-
-            meshes.Add(mesh);
-
-            DA.SetDataList(0, meshes);
-
-            Gmsh.FinalizeGmsh();
+        public override void RemovedFromDocument(GH_Document document)
+        {
+            GmshSession.RemoveModel(_modelName);
+            base.RemovedFromDocument(document);
         }
 
         protected override System.Drawing.Bitmap Icon
@@ -151,13 +176,6 @@ namespace GmshCommon.GH
             }
         }
 
-        public override Guid ComponentGuid
-        {
-            /*
-                0fe48fc4-68ff-484a-949c-37bae7f882c1
-                45094c4f-ef59-4a0a-b30a-6a3fcc21a024
-             */
-            get { return new Guid("242113a3-bccd-476b-89b1-306c18d4e930"); }
-        }
+        public override Guid ComponentGuid => new Guid("242113a3-bccd-476b-89b1-306c18d4e930");
     }
 }

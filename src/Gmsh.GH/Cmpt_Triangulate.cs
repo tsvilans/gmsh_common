@@ -36,6 +36,9 @@ namespace GmshCommon.GH
 
     public class Cmpt_Triangulate : GH_Component
     {
+        // A private, per-instance Gmsh model - see Cmpt_Tetrahedralize for the reasoning.
+        private readonly string _modelName = "Gmsh.GH_Triangulate_" + Guid.NewGuid().ToString("N");
+
         public Cmpt_Triangulate()
             : base("Triangulate", "Triangulate",
                 "Triangulate points.",
@@ -51,18 +54,20 @@ namespace GmshCommon.GH
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
             pManager.AddMeshParameter("Mesh", "M", "Triangulated mesh.", GH_ParamAccess.item);
+            pManager.AddTextParameter("Model", "G", "Name of this component's Gmsh model, for use with the Query component.", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            // Always report this component's model name, even if we return early below -
+            // it's stable for the component's lifetime regardless of whether it has solved.
+            DA.SetData("Model", _modelName);
 
             var points = new List<Point3d>();
 
             DA.GetDataList("Points", points);
 
             if (points.Count < 1) return;
-
-            Gmsh.InitializeGmsh();
 
             var ptsFlat2d = new double[points.Count * 2];
 
@@ -73,25 +78,63 @@ namespace GmshCommon.GH
                 ptsFlat2d[i * 2 + 1] = pt.Y;
             }
 
-            var tris = Gmsh.Model.Mesh.Triangulate(ptsFlat2d);
-            var nTris = tris.Length / 3;
-
             var mesh2d = new Mesh();
             mesh2d.Vertices.AddVertices(points);
 
-
-            for (int i = 0; i < nTris; ++i)
+            // Fresh model every solve - see Cmpt_Tetrahedralize for the reasoning.
+            using (GmshSession.UseFreshModel(_modelName))
             {
-                int a = (int)tris[i * 3 + 0] - 1,
-                  b = (int)tris[i * 3 + 1] - 1,
-                  c = (int)tris[i * 3 + 2] - 1;
-                mesh2d.Faces.AddFace(a, b, c);
+                var tris = Gmsh.Model.Mesh.Triangulate(ptsFlat2d);
+                var nTris = tris.Length / 3;
+
+                for (int i = 0; i < nTris; ++i)
+                {
+                    int a = (int)tris[i * 3 + 0] - 1,
+                      b = (int)tris[i * 3 + 1] - 1,
+                      c = (int)tris[i * 3 + 2] - 1;
+                    mesh2d.Faces.AddFace(a, b, c);
+                }
+
+                // Gmsh.Model.Mesh.Triangulate() wraps gmsh::algorithm::triangulate, a
+                // standalone computational-geometry routine - it hands back connectivity
+                // but never touches the current model. Without this, the model we just
+                // created above stays empty and Query would never find anything in it.
+                var entity = Gmsh.Model.AddDiscreteEntity(2, -1);
+
+                var nodeTags = new IntPtr[points.Count];
+                var nodeCoords = new double[points.Count * 3];
+                for (int i = 0; i < points.Count; ++i)
+                {
+                    nodeTags[i] = (IntPtr)(i + 1);
+                    nodeCoords[i * 3 + 0] = points[i].X;
+                    nodeCoords[i * 3 + 1] = points[i].Y;
+                    nodeCoords[i * 3 + 2] = points[i].Z;
+                }
+                Gmsh.Model.Mesh.AddNodes(2, entity, nodeTags, nodeCoords);
+
+                var faceTags = new IntPtr[nTris];
+                var faceNodeTags = new IntPtr[nTris * 3];
+                for (int i = 0; i < nTris; ++i)
+                {
+                    faceTags[i] = (IntPtr)(i + 1);
+                    // tris[] is already 1-based, matching the node tags assigned above.
+                    faceNodeTags[i * 3 + 0] = tris[i * 3 + 0];
+                    faceNodeTags[i * 3 + 1] = tris[i * 3 + 1];
+                    faceNodeTags[i * 3 + 2] = tris[i * 3 + 2];
+                }
+                Gmsh.Model.Mesh.AddElements(2, entity,
+                    new int[] { 2 }, // 2 = linear triangle (MSH_TRI_3)
+                    new IntPtr[][] { faceTags },
+                    new IntPtr[][] { faceNodeTags });
             }
 
-
             DA.SetData("Mesh", mesh2d);
+        }
 
-            Gmsh.FinalizeGmsh();
+        public override void RemovedFromDocument(GH_Document document)
+        {
+            GmshSession.RemoveModel(_modelName);
+            base.RemovedFromDocument(document);
         }
 
         protected override System.Drawing.Bitmap Icon

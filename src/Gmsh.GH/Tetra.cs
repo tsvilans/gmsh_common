@@ -25,8 +25,8 @@ namespace GmshCommon.GH
             }
 
             // Do the gee mesh
-            Gmsh.InitializeGmsh();
-
+            // Caller is expected to have already entered a Gmsh model session, e.g.:
+            //   using (GmshSession.UseFreshModel(modelName)) { Tetra.GetTetrahedralizedShell(...); }
             Gmsh.Option.SetNumber("Mesh.AngleToleranceFacetOverlap", angleToleranceFacetOverlap);
             Gmsh.Option.SetNumber("Mesh.AnisoMax", maxAnisotropy);
 
@@ -78,6 +78,45 @@ namespace GmshCommon.GH
 
             var nTetra = tetraList.Count;
 
+            // Gmsh.Model.Mesh.Tetrahedralize() wraps gmsh::algorithm::tetrahedralize, a
+            // standalone computational-geometry routine - it hands back connectivity but
+            // never touches the current model. Without this, the model created by the
+            // caller (see note above) stays empty and Query would never find anything in
+            // it. We add the filtered tets themselves (not the derived shell below), so a
+            // Query against this model does genuine 3D point-in-tetrahedron lookups.
+            if (nTetra > 0)
+            {
+                var entity = Gmsh.Model.AddDiscreteEntity(3, -1);
+
+                var nodeTags = new IntPtr[points.Count];
+                var nodeCoords = new double[points.Count * 3];
+                for (int i = 0; i < points.Count; ++i)
+                {
+                    nodeTags[i] = (IntPtr)(i + 1);
+                    nodeCoords[i * 3 + 0] = points[i].X;
+                    nodeCoords[i * 3 + 1] = points[i].Y;
+                    nodeCoords[i * 3 + 2] = points[i].Z;
+                }
+                Gmsh.Model.Mesh.AddNodes(3, entity, nodeTags, nodeCoords);
+
+                var tetTags = new IntPtr[nTetra];
+                var tetNodeTags = new IntPtr[nTetra * 4];
+                for (int i = 0; i < nTetra; ++i)
+                {
+                    tetTags[i] = (IntPtr)(i + 1);
+                    var tet = tetraList[i];
+                    // tetraList holds 0-based indices into `points`; node tags are 1-based.
+                    tetNodeTags[i * 4 + 0] = (IntPtr)(tet[0] + 1);
+                    tetNodeTags[i * 4 + 1] = (IntPtr)(tet[1] + 1);
+                    tetNodeTags[i * 4 + 2] = (IntPtr)(tet[2] + 1);
+                    tetNodeTags[i * 4 + 3] = (IntPtr)(tet[3] + 1);
+                }
+                Gmsh.Model.Mesh.AddElements(3, entity,
+                    new int[] { 4 }, // 4 = linear tetrahedron (MSH_TET_4)
+                    new IntPtr[][] { tetTags },
+                    new IntPtr[][] { tetNodeTags });
+            }
+
             var comparer = new CompareIntArray();
 
             var cellSet = new HashBucket<int[]>(comparer);
@@ -102,6 +141,35 @@ namespace GmshCommon.GH
             }
 
             var faces = cellSet.GetUnique();
+
+            // Register this same boundary shell as its own 2D discrete entity in the Gmsh
+            // model, not just as the Rhino mesh returned below - reusing the volume's own
+            // node tags (no need to re-add coordinates, node numbering is global across the
+            // model). `faces` here already IS the boundary-only face list (HashBucket.GetUnique
+            // keeps only faces touched by exactly one tet), so this is the natural place to
+            // compute it once, rather than having Query re-derive it from the tets on every
+            // single query. Element tags must be unique across the whole model, so these start
+            // right after the volume's own tet tags rather than restarting at 1.
+            if (faces.Count > 0)
+            {
+                var boundaryEntity = Gmsh.Model.AddDiscreteEntity(2, -1);
+
+                var faceTags = new IntPtr[faces.Count];
+                var faceNodeTags = new IntPtr[faces.Count * 3];
+                for (int i = 0; i < faces.Count; ++i)
+                {
+                    faceTags[i] = (IntPtr)(nTetra + i + 1);
+                    var face = faces[i];
+                    // faces holds 0-based indices into `points`; node tags are 1-based.
+                    faceNodeTags[i * 3 + 0] = (IntPtr)(face[0] + 1);
+                    faceNodeTags[i * 3 + 1] = (IntPtr)(face[1] + 1);
+                    faceNodeTags[i * 3 + 2] = (IntPtr)(face[2] + 1);
+                }
+                Gmsh.Model.Mesh.AddElements(2, boundaryEntity,
+                    new int[] { 2 }, // 2 = linear triangle (MSH_TRI_3)
+                    new IntPtr[][] { faceTags },
+                    new IntPtr[][] { faceNodeTags });
+            }
             /*
             faces.Sort((f0, f1) =>
             {
@@ -131,7 +199,6 @@ namespace GmshCommon.GH
             mesh3d.Normals.ComputeNormals();
 
             mesh3d.RebuildNormals();
-            Gmsh.FinalizeGmsh();
 
             return mesh3d;
         }

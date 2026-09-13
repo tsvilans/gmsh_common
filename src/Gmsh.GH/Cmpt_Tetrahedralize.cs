@@ -36,6 +36,11 @@ namespace GmshCommon.GH
 
     public class Cmpt_Tetrahedralize : GH_Component
     {
+        // A private, per-instance Gmsh model. Generated once when this component instance is
+        // created (including on document reload, so we never rely on a name from a previous
+        // Rhino session) and kept for the component's lifetime.
+        private readonly string _modelName = "Gmsh.GH_Tetrahedralize_" + Guid.NewGuid().ToString("N");
+
         public Cmpt_Tetrahedralize()
             : base("Tetrahedralize", "Tetrahedralize",
                 "Tetrahedralize points.",
@@ -53,10 +58,14 @@ namespace GmshCommon.GH
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
             pManager.AddMeshParameter("Mesh", "M", "Tetrahedralized mesh.", GH_ParamAccess.item);
+            pManager.AddTextParameter("Model", "G", "Name of this component's Gmsh model, for use with the Query component.", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            // Always report this component's model name, even if we return early below -
+            // it's stable for the component's lifetime regardless of whether it has solved.
+            DA.SetData("Model", _modelName);
 
             var points = new List<Point3d>();
             double maxEdgeLength = 100, maxAnisotropy = 1e5;
@@ -65,10 +74,25 @@ namespace GmshCommon.GH
             DA.GetData("MaxEdge", ref maxEdgeLength);
             DA.GetData("MaxAniso", ref maxAnisotropy);
 
-            Mesh mesh = Tetra.GetTetrahedralizedShell(points, maxEdgeLength, 1e-5, maxAnisotropy);
+            Mesh mesh;
+
+            // Fresh model every solve: the tetrahedralization is fully rebuilt from the
+            // current points each time, so we remove any previous version of this
+            // component's model and start clean. This never touches other components'
+            // models, and is safe even if another component is using Gmsh concurrently.
+            using (GmshSession.UseFreshModel(_modelName))
+            {
+                mesh = Tetra.GetTetrahedralizedShell(points, maxEdgeLength, 1e-5, maxAnisotropy);
+            }
 
             DA.SetData("Mesh", mesh);
 
+        }
+
+        public override void RemovedFromDocument(GH_Document document)
+        {
+            GmshSession.RemoveModel(_modelName);
+            base.RemovedFromDocument(document);
         }
 
         protected override System.Drawing.Bitmap Icon
